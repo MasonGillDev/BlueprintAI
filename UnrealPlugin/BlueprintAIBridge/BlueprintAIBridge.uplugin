@@ -1,0 +1,19 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "Blueprint AI Bridge",
+	"Description": "Exposes an HTTP server so BlueprintAI can read and modify blueprint graphs in the editor.",
+	"Category": "Editor",
+	"CreatedBy": "BlueprintAI",
+	"EnabledByDefault": true,
+	"CanContainContent": false,
+	"IsBetaVersion": true,
+	"Modules": [
+		{
+			"Name": "BlueprintAIBridge",
+			"Type": "Editor",
+			"LoadingPhase": "PostEngineInit"
+		}
+	]
+}

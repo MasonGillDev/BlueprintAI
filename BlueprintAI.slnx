@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BlueprintAI.Application/BlueprintAI.Application.csproj" />
+    <Project Path="src/BlueprintAI.Domain/BlueprintAI.Domain.csproj" />
+    <Project Path="src/BlueprintAI.Infrastructure/BlueprintAI.Infrastructure.csproj" />
+    <Project Path="src/BlueprintAI.Web/BlueprintAI.Web.csproj" />
+  </Folder>
+</Solution>

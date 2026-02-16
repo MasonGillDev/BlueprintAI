@@ -1,0 +1,37 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.DotSettings
+publish/
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# UE
+Intermediate/
+Saved/
+Binaries/
+DerivedDataCache/
+.vs/
+
+# IDE
+.idea/
+.vscode/
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Env
+.env
+.env.*
