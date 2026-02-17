@@ -80,7 +80,7 @@ TSharedPtr<FJsonObject> FBlueprintSerializer::SerializeNode(UK2Node* Node)
 
 	NodeJson->SetStringField(TEXT("id"), NodeId);
 	NodeJson->SetStringField(TEXT("title"), Node->GetNodeTitle(ENodeTitleType::FullTitle).ToString());
-	NodeJson->SetStringField(TEXT("category"), Node->GetNodeCategory().ToString());
+	NodeJson->SetStringField(TEXT("category"), Node->GetMenuCategory().ToString());
 	NodeJson->SetStringField(TEXT("style"), MapNodeStyle(Node));
 	NodeJson->SetNumberField(TEXT("positionX"), Node->NodePosX);
 	NodeJson->SetNumberField(TEXT("positionY"), Node->NodePosY);

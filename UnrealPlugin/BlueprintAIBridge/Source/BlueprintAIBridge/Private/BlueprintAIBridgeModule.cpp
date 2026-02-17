@@ -2,6 +2,7 @@
 #include "HttpServerHandler.h"
 #include "HttpServerModule.h"
 #include "IHttpRouter.h"
+#include "Misc/ConfigCacheIni.h"
 
 #define LOCTEXT_NAMESPACE "FBlueprintAIBridgeModule"
 
@@ -9,6 +10,9 @@ static TSharedPtr<FHttpServerHandler> GHandler;
 
 void FBlueprintAIBridgeModule::StartupModule()
 {
+	// Bind to all interfaces so other devices on the network can connect
+	GConfig->SetString(TEXT("HTTPServer.Listeners"), TEXT("DefaultBindAddress"), TEXT("0.0.0.0"), GEngineIni);
+
 	FHttpServerModule& HttpServerModule = FHttpServerModule::Get();
 	HttpRouter = HttpServerModule.GetHttpRouter(ListenPort);
 
