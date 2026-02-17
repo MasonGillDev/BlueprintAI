@@ -99,8 +99,8 @@ bool FHttpServerHandler::HandleApplyBlueprint(const FHttpServerRequest& Request,
 	FString BlueprintName = Request.QueryParams[TEXT("name")];
 
 	// Parse request body
-	FString BodyString = FString(UTF8_TO_TCHAR(
-		reinterpret_cast<const char*>(Request.Body.GetData())));
+	FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(Request.Body.GetData()), Request.Body.Num());
+	FString BodyString(Converter.Length(), Converter.Get());
 
 	TSharedPtr<FJsonObject> BodyJson;
 	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(BodyString);
@@ -136,8 +136,8 @@ bool FHttpServerHandler::HandleApplyBlueprint(const FHttpServerRequest& Request,
 bool FHttpServerHandler::HandleCreateBlueprint(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
 {
 	// Parse request body: { "name": "BP_MyBlueprint", "path": "/Game/Blueprints", "parentClass": "Actor", "state": { ... } }
-	FString BodyString = FString(UTF8_TO_TCHAR(
-		reinterpret_cast<const char*>(Request.Body.GetData())));
+	FUTF8ToTCHAR Converter(reinterpret_cast<const ANSICHAR*>(Request.Body.GetData()), Request.Body.Num());
+	FString BodyString(Converter.Length(), Converter.Get());
 
 	TSharedPtr<FJsonObject> BodyJson;
 	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(BodyString);
