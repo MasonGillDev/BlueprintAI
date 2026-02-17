@@ -35,8 +35,10 @@ private:
 	TSharedPtr<FJsonObject> SerializeNode(UK2Node* Node);
 	TSharedPtr<FJsonObject> SerializePin(UEdGraphPin* Pin);
 	TArray<TSharedPtr<FJsonValue>> SerializeConnections(UEdGraph* Graph);
+	TArray<TSharedPtr<FJsonValue>> SerializeVariables(UBlueprint* Blueprint);
 	FString MapNodeStyle(UK2Node* Node) const;
 	FString MapPinType(UEdGraphPin* Pin) const;
+	FString MapPinTypeFromPinType(const FEdGraphPinType& PinType) const;
 
 	TMap<FString, UEdGraphNode*> NodeMap;
 	TMap<FString, UEdGraphPin*> PinMap;

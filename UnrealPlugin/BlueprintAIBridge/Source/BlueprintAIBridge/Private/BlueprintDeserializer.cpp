@@ -53,6 +53,13 @@ bool FBlueprintDeserializer::ApplyFullSync(UBlueprint* Blueprint, const TSharedP
 	// Clear the pin name map for this sync
 	PinNameMap.Empty();
 
+	// Create member variables from JSON (must happen before node creation so Get/Set nodes can resolve)
+	const TArray<TSharedPtr<FJsonValue>>* VariablesArray;
+	if (JsonState->TryGetArrayField(TEXT("variables"), VariablesArray))
+	{
+		CreateVariablesFromJson(Blueprint, *VariablesArray);
+	}
+
 	// Create nodes from JSON
 	TMap<FString, UEdGraphNode*> NodeMap;
 	const TArray<TSharedPtr<FJsonValue>>* NodesArray;
@@ -139,7 +146,11 @@ UEdGraphNode* FBlueprintDeserializer::CreateNodeFromJson(UBlueprint* Blueprint, 
 	{
 		NewNode = CreatePureNode(Graph, Title, PosX, PosY);
 	}
-	else // "Function", "Variable", "Macro", or anything else
+	else if (Style == TEXT("Variable"))
+	{
+		NewNode = CreateVariableNode(Blueprint, Graph, Title, NodeJson, PosX, PosY);
+	}
+	else // "Function", "Macro", or anything else
 	{
 		NewNode = CreateFunctionNode(Graph, Title, PosX, PosY);
 	}
@@ -454,4 +465,162 @@ UFunction* FBlueprintDeserializer::FindFunctionByDisplayName(const FString& Disp
 	UE_LOG(LogTemp, Warning, TEXT("BlueprintAIBridge: Could not find UFunction with display name '%s'"), *DisplayName);
 	FunctionCache.Add(DisplayName, nullptr);
 	return nullptr;
+}
+
+FEdGraphPinType FBlueprintDeserializer::MapPinTypeFromString(const FString& TypeStr)
+{
+	FEdGraphPinType PinType;
+	PinType.PinCategory = UEdGraphSchema_K2::PC_Wildcard; // default fallback
+
+	if (TypeStr == TEXT("Bool"))
+	{
+		PinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
+	}
+	else if (TypeStr == TEXT("Int"))
+	{
+		PinType.PinCategory = UEdGraphSchema_K2::PC_Int;
+	}
+	else if (TypeStr == TEXT("Float"))
+	{
+		PinType.PinCategory = UEdGraphSchema_K2::PC_Real;
+	}
+	else if (TypeStr == TEXT("String"))
+	{
+		PinType.PinCategory = UEdGraphSchema_K2::PC_String;
+	}
+	else if (TypeStr == TEXT("Name"))
+	{
+		PinType.PinCategory = UEdGraphSchema_K2::PC_Name;
+	}
+	else if (TypeStr == TEXT("Text"))
+	{
+		PinType.PinCategory = UEdGraphSchema_K2::PC_Text;
+	}
+	else if (TypeStr == TEXT("Byte"))
+	{
+		PinType.PinCategory = UEdGraphSchema_K2::PC_Byte;
+	}
+	else if (TypeStr == TEXT("Object"))
+	{
+		PinType.PinCategory = UEdGraphSchema_K2::PC_Object;
+	}
+	else if (TypeStr == TEXT("Vector"))
+	{
+		PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+		PinType.PinSubCategoryObject = TBaseStructure<FVector>::Get();
+	}
+	else if (TypeStr == TEXT("Rotator"))
+	{
+		PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+		PinType.PinSubCategoryObject = TBaseStructure<FRotator>::Get();
+	}
+	else if (TypeStr == TEXT("Transform"))
+	{
+		PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+		PinType.PinSubCategoryObject = TBaseStructure<FTransform>::Get();
+	}
+
+	return PinType;
+}
+
+void FBlueprintDeserializer::CreateVariablesFromJson(UBlueprint* Blueprint, const TArray<TSharedPtr<FJsonValue>>& VariablesArray)
+{
+	// Clear existing user-defined variables (NewVariables), preserving system variables
+	Blueprint->NewVariables.Empty();
+
+	for (const TSharedPtr<FJsonValue>& VarVal : VariablesArray)
+	{
+		TSharedPtr<FJsonObject> VarJson = VarVal->AsObject();
+		if (!VarJson.IsValid()) continue;
+
+		FString Name = VarJson->GetStringField(TEXT("name"));
+		FString TypeStr = VarJson->GetStringField(TEXT("type"));
+
+		FEdGraphPinType PinType = MapPinTypeFromString(TypeStr);
+
+		// Add the member variable
+		bool bSuccess = FBlueprintEditorUtils::AddMemberVariable(Blueprint, FName(*Name), PinType);
+		if (!bSuccess)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("BlueprintAIBridge: Failed to add variable '%s'"), *Name);
+			continue;
+		}
+
+		// Find the newly created variable description and set properties
+		for (FBPVariableDescription& VarDesc : Blueprint->NewVariables)
+		{
+			if (VarDesc.VarName == FName(*Name))
+			{
+				// Set default value
+				FString DefaultValue;
+				if (VarJson->TryGetStringField(TEXT("defaultValue"), DefaultValue) && !DefaultValue.IsEmpty())
+				{
+					VarDesc.DefaultValue = DefaultValue;
+				}
+
+				// Set category
+				FString Category;
+				if (VarJson->TryGetStringField(TEXT("category"), Category) && !Category.IsEmpty())
+				{
+					VarDesc.Category = FText::FromString(Category);
+				}
+
+				// Set editability flags
+				bool bIsEditable = false;
+				if (VarJson->TryGetBoolField(TEXT("isEditable"), bIsEditable) && bIsEditable)
+				{
+					VarDesc.PropertyFlags |= CPF_Edit | CPF_BlueprintVisible;
+				}
+
+				break;
+			}
+		}
+
+		UE_LOG(LogTemp, Log, TEXT("BlueprintAIBridge: Created variable '%s' (type=%s)"), *Name, *TypeStr);
+	}
+}
+
+UEdGraphNode* FBlueprintDeserializer::CreateVariableNode(UBlueprint* Blueprint, UEdGraph* Graph, const FString& Title, const TSharedPtr<FJsonObject>& NodeJson, int32 PosX, int32 PosY)
+{
+	// Determine if this is a Get or Set node, and extract the variable name
+	bool bIsSetter = false;
+	FString VarName = Title;
+
+	if (Title.StartsWith(TEXT("Set ")))
+	{
+		bIsSetter = true;
+		VarName = Title.RightChop(4);
+	}
+	else if (Title.StartsWith(TEXT("Get ")))
+	{
+		VarName = Title.RightChop(4);
+	}
+
+	// Ensure the skeleton class is up to date so we can find the property
+	FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+
+	if (bIsSetter)
+	{
+		UK2Node_VariableSet* SetNode = NewObject<UK2Node_VariableSet>(Graph);
+		SetNode->CreateNewGuid();
+		SetNode->VariableReference.SetSelfMember(FName(*VarName));
+		SetNode->PostPlacedNewNode();
+		SetNode->NodePosX = PosX;
+		SetNode->NodePosY = PosY;
+		Graph->AddNode(SetNode, false, false);
+		SetNode->AllocateDefaultPins();
+		return SetNode;
+	}
+	else
+	{
+		UK2Node_VariableGet* GetNode = NewObject<UK2Node_VariableGet>(Graph);
+		GetNode->CreateNewGuid();
+		GetNode->VariableReference.SetSelfMember(FName(*VarName));
+		GetNode->PostPlacedNewNode();
+		GetNode->NodePosX = PosX;
+		GetNode->NodePosY = PosY;
+		Graph->AddNode(GetNode, false, false);
+		GetNode->AllocateDefaultPins();
+		return GetNode;
+	}
 }

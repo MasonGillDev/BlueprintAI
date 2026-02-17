@@ -63,9 +63,11 @@ TSharedPtr<FJsonObject> FBlueprintSerializer::SerializeBlueprint(UBlueprint* Blu
 	}
 	Root->SetArrayField(TEXT("connections"), AllConnections);
 
-	// Comments and variables as empty arrays for now
+	// Comments as empty array for now
 	Root->SetArrayField(TEXT("comments"), TArray<TSharedPtr<FJsonValue>>());
-	Root->SetArrayField(TEXT("variables"), TArray<TSharedPtr<FJsonValue>>());
+
+	// Serialize variables
+	Root->SetArrayField(TEXT("variables"), SerializeVariables(Blueprint));
 
 	return Root;
 }
@@ -273,6 +275,61 @@ FString FBlueprintSerializer::MapPinType(UEdGraphPin* Pin) const
 	}
 
 	return TEXT("Wildcard");
+}
+
+FString FBlueprintSerializer::MapPinTypeFromPinType(const FEdGraphPinType& PinType) const
+{
+	const FName& Category = PinType.PinCategory;
+
+	if (Category == UEdGraphSchema_K2::PC_Boolean) return TEXT("Bool");
+	if (Category == UEdGraphSchema_K2::PC_Int) return TEXT("Int");
+	if (Category == UEdGraphSchema_K2::PC_Real || Category == UEdGraphSchema_K2::PC_Float) return TEXT("Float");
+	if (Category == UEdGraphSchema_K2::PC_String) return TEXT("String");
+	if (Category == UEdGraphSchema_K2::PC_Name) return TEXT("Name");
+	if (Category == UEdGraphSchema_K2::PC_Text) return TEXT("Text");
+	if (Category == UEdGraphSchema_K2::PC_Byte) return TEXT("Byte");
+	if (Category == UEdGraphSchema_K2::PC_Object || Category == UEdGraphSchema_K2::PC_SoftObject) return TEXT("Object");
+	if (Category == UEdGraphSchema_K2::PC_Class || Category == UEdGraphSchema_K2::PC_SoftClass) return TEXT("Class");
+
+	if (Category == UEdGraphSchema_K2::PC_Struct)
+	{
+		UScriptStruct* Struct = Cast<UScriptStruct>(PinType.PinSubCategoryObject.Get());
+		if (Struct)
+		{
+			if (Struct == TBaseStructure<FVector>::Get()) return TEXT("Vector");
+			if (Struct == TBaseStructure<FRotator>::Get()) return TEXT("Rotator");
+			if (Struct == TBaseStructure<FTransform>::Get()) return TEXT("Transform");
+		}
+		return TEXT("Struct");
+	}
+
+	return TEXT("Wildcard");
+}
+
+TArray<TSharedPtr<FJsonValue>> FBlueprintSerializer::SerializeVariables(UBlueprint* Blueprint)
+{
+	TArray<TSharedPtr<FJsonValue>> VariablesArray;
+
+	for (const FBPVariableDescription& VarDesc : Blueprint->NewVariables)
+	{
+		TSharedPtr<FJsonObject> VarJson = MakeShared<FJsonObject>();
+
+		VarJson->SetStringField(TEXT("id"), FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens));
+		VarJson->SetStringField(TEXT("name"), VarDesc.VarName.ToString());
+		VarJson->SetStringField(TEXT("type"), MapPinTypeFromPinType(VarDesc.VarType));
+
+		if (!VarDesc.DefaultValue.IsEmpty())
+		{
+			VarJson->SetStringField(TEXT("defaultValue"), VarDesc.DefaultValue);
+		}
+
+		VarJson->SetStringField(TEXT("category"), VarDesc.Category.ToString());
+		VarJson->SetBoolField(TEXT("isEditable"), (VarDesc.PropertyFlags & (CPF_Edit | CPF_BlueprintVisible)) != 0);
+
+		VariablesArray.Add(MakeShared<FJsonValueObject>(VarJson));
+	}
+
+	return VariablesArray;
 }
 
 void FBlueprintSerializer::ClearMappings()

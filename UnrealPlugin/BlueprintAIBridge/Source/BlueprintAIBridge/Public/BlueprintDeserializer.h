@@ -26,6 +26,10 @@ private:
 		const TMap<FString, UEdGraphNode*>& NodeMap,
 		const TMap<FString, TMap<FString, FString>>& PinIdToNameMap);
 
+	void CreateVariablesFromJson(UBlueprint* Blueprint, const TArray<TSharedPtr<FJsonValue>>& VariablesArray);
+	UEdGraphNode* CreateVariableNode(UBlueprint* Blueprint, UEdGraph* Graph, const FString& Title, const TSharedPtr<FJsonObject>& NodeJson, int32 PosX, int32 PosY);
+	FEdGraphPinType MapPinTypeFromString(const FString& TypeStr);
+
 	UEdGraphPin* FindPinByName(UEdGraphNode* Node, const FString& PinName, EEdGraphPinDirection Direction);
 	UFunction* FindFunctionByDisplayName(const FString& DisplayName);
 
