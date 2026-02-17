@@ -35,6 +35,8 @@ public static class DependencyInjection
         services.AddSingleton<IUEBridgeService>(sp =>
             new UEBridgeService(sp.GetRequiredService<IHttpClientFactory>()));
 
+        services.AddSingleton<ConfigPersistenceService>();
+
         return services;
     }
 }

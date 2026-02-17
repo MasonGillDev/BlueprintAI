@@ -1,7 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using BlueprintAI.Application;
+using BlueprintAI.Application.Interfaces;
 using BlueprintAI.Infrastructure;
+using BlueprintAI.Infrastructure.Providers;
+using BlueprintAI.Infrastructure.Services;
 using BlueprintAI.Web.Hubs;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -35,6 +38,14 @@ builder.Services.AddInfrastructure();  // Must be before AddApplication (provide
 builder.Services.AddApplication();
 
 var app = builder.Build();
+
+// Load persisted config on startup
+var configService = app.Services.GetRequiredService<ConfigPersistenceService>();
+configService.ApplyTo(
+    app.Services.GetRequiredService<AnthropicSettings>(),
+    app.Services.GetRequiredService<OpenAISettings>(),
+    app.Services.GetRequiredService<OllamaSettings>(),
+    app.Services.GetRequiredService<IUEBridgeService>());
 
 app.UseCors();
 app.MapControllers();

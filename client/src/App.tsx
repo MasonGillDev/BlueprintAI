@@ -5,17 +5,39 @@ import SettingsModal from './components/SettingsModal';
 import VariablesPanel from './components/VariablesPanel';
 import UEConnectionPanel from './components/UEConnectionPanel';
 import { useSignalR } from './hooks/useSignalR';
+import { useUEConnectionStore } from './store/ueConnectionStore';
 import './App.css';
+
+const API_BASE = 'http://localhost:5000';
 
 function App() {
   const { isConnected, sendMessage, undo, redo, setProvider, importFromUE } = useSignalR();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [currentProvider, setCurrentProvider] = useState('anthropic');
+  const [currentProvider, setCurrentProvider] = useState(
+    () => localStorage.getItem('active-provider') || 'anthropic'
+  );
+  const loadPersistedSettings = useUEConnectionStore((s) => s.loadPersistedSettings);
+
+  // Load persisted config on mount
+  useEffect(() => {
+    loadPersistedSettings();
+    fetch(`${API_BASE}/api/settings/config`)
+      .then((r) => r.json())
+      .then((config) => {
+        if (config.activeProvider) {
+          setCurrentProvider(config.activeProvider);
+          setProvider(config.activeProvider);
+          localStorage.setItem('active-provider', config.activeProvider);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleProviderChange = useCallback(
     (providerId: string) => {
       setCurrentProvider(providerId);
       setProvider(providerId);
+      localStorage.setItem('active-provider', providerId);
     },
     [setProvider]
   );

@@ -16,17 +16,21 @@ interface UEConnectionState {
   disconnect: () => Promise<void>;
   checkStatus: () => Promise<void>;
   fetchBlueprints: () => Promise<void>;
+  loadPersistedSettings: () => Promise<void>;
 }
 
 export const useUEConnectionStore = create<UEConnectionState>((set, get) => ({
   isConnected: false,
-  baseUrl: 'http://localhost:8089',
+  baseUrl: localStorage.getItem('ue-base-url') || 'http://localhost:8089',
   engineVersion: null,
   error: null,
   availableBlueprints: [],
   isChecking: false,
 
-  setBaseUrl: (url: string) => set({ baseUrl: url }),
+  setBaseUrl: (url: string) => {
+    localStorage.setItem('ue-base-url', url);
+    set({ baseUrl: url });
+  },
 
   connect: async () => {
     set({ isChecking: true, error: null });
@@ -44,6 +48,7 @@ export const useUEConnectionStore = create<UEConnectionState>((set, get) => ({
         isChecking: false,
       });
       if (status.isConnected) {
+        localStorage.setItem('ue-base-url', get().baseUrl);
         get().fetchBlueprints();
       }
     } catch (err) {
@@ -86,6 +91,19 @@ export const useUEConnectionStore = create<UEConnectionState>((set, get) => ({
       set({ availableBlueprints: blueprints });
     } catch {
       set({ availableBlueprints: [] });
+    }
+  },
+
+  loadPersistedSettings: async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/settings/config`);
+      const config = await res.json();
+      if (config.ueBaseUrl) {
+        localStorage.setItem('ue-base-url', config.ueBaseUrl);
+        set({ baseUrl: config.ueBaseUrl });
+      }
+    } catch {
+      // use localStorage fallback
     }
   },
 }));

@@ -1,4 +1,6 @@
 using BlueprintAI.Application.Interfaces;
+using BlueprintAI.Infrastructure.Providers;
+using BlueprintAI.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BlueprintAI.Web.Controllers;
@@ -8,10 +10,23 @@ namespace BlueprintAI.Web.Controllers;
 public class UEBridgeController : ControllerBase
 {
     private readonly IUEBridgeService _bridge;
+    private readonly ConfigPersistenceService _configService;
+    private readonly AnthropicSettings _anthropicSettings;
+    private readonly OpenAISettings _openaiSettings;
+    private readonly OllamaSettings _ollamaSettings;
 
-    public UEBridgeController(IUEBridgeService bridge)
+    public UEBridgeController(
+        IUEBridgeService bridge,
+        ConfigPersistenceService configService,
+        AnthropicSettings anthropicSettings,
+        OpenAISettings openaiSettings,
+        OllamaSettings ollamaSettings)
     {
         _bridge = bridge;
+        _configService = configService;
+        _anthropicSettings = anthropicSettings;
+        _openaiSettings = openaiSettings;
+        _ollamaSettings = ollamaSettings;
     }
 
     [HttpGet("status")]
@@ -26,6 +41,13 @@ public class UEBridgeController : ControllerBase
     {
         _bridge.Configure(settings);
         var status = await _bridge.CheckConnectionAsync(ct);
+
+        // Persist UE URL on successful connect
+        if (status.IsConnected)
+        {
+            _configService.SaveFrom(_anthropicSettings, _openaiSettings, _ollamaSettings, _bridge);
+        }
+
         return Ok(status);
     }
 

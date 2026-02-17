@@ -1,5 +1,7 @@
+using BlueprintAI.Application.Interfaces;
 using BlueprintAI.Infrastructure;
 using BlueprintAI.Infrastructure.Providers;
+using BlueprintAI.Infrastructure.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace BlueprintAI.Web.Controllers;
@@ -12,17 +14,23 @@ public class SettingsController : ControllerBase
     private readonly AnthropicSettings _anthropicSettings;
     private readonly OpenAISettings _openaiSettings;
     private readonly OllamaSettings _ollamaSettings;
+    private readonly ConfigPersistenceService _configService;
+    private readonly IUEBridgeService _ueBridge;
 
     public SettingsController(
         ChatProviderFactory providerFactory,
         AnthropicSettings anthropicSettings,
         OpenAISettings openaiSettings,
-        OllamaSettings ollamaSettings)
+        OllamaSettings ollamaSettings,
+        ConfigPersistenceService configService,
+        IUEBridgeService ueBridge)
     {
         _providerFactory = providerFactory;
         _anthropicSettings = anthropicSettings;
         _openaiSettings = openaiSettings;
         _ollamaSettings = ollamaSettings;
+        _configService = configService;
+        _ueBridge = ueBridge;
     }
 
     [HttpGet("providers")]
@@ -54,6 +62,17 @@ public class SettingsController : ControllerBase
         });
     }
 
+    [HttpGet("config")]
+    public IActionResult GetConfig()
+    {
+        var config = _configService.Load();
+        return Ok(new
+        {
+            activeProvider = config.ActiveProvider ?? "anthropic",
+            ueBaseUrl = _ueBridge.GetSettings().BaseUrl
+        });
+    }
+
     [HttpPost("provider/{providerId}")]
     public IActionResult UpdateProvider(string providerId, [FromBody] ProviderSettingsDto dto)
     {
@@ -78,6 +97,9 @@ public class SettingsController : ControllerBase
             default:
                 return NotFound($"Unknown provider: {providerId}");
         }
+
+        // Persist to disk
+        _configService.SaveFrom(_anthropicSettings, _openaiSettings, _ollamaSettings, _ueBridge, providerId);
 
         return Ok();
     }
