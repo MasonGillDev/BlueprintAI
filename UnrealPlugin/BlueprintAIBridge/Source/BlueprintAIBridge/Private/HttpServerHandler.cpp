@@ -7,8 +7,6 @@
 #include "Editor.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
-#include "Async/Async.h"
-#include "Misc/EngineVersionComparison.h"
 
 bool FHttpServerHandler::HandleStatus(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
 {
@@ -22,140 +20,73 @@ bool FHttpServerHandler::HandleStatus(const FHttpServerRequest& Request, const F
 
 bool FHttpServerHandler::HandleListBlueprints(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
 {
-	// Must access editor state on game thread
-	TSharedPtr<TPromise<TArray<TSharedPtr<FJsonValue>>>> Promise = MakeShared<TPromise<TArray<TSharedPtr<FJsonValue>>>>();
-	TFuture<TArray<TSharedPtr<FJsonValue>>> Future = Promise->GetFuture();
+	// FHttpServerModule dispatches handlers on the game thread in UE 5.x,
+	// so we can access editor subsystems directly — no marshaling needed.
+	TArray<TSharedPtr<FJsonValue>> BlueprintsList;
 
-	AsyncTask(ENamedThreads::GameThread, [Promise]()
+	UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
+	if (AssetEditorSubsystem)
 	{
-		TArray<TSharedPtr<FJsonValue>> BlueprintsList;
-
-		UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
-		if (AssetEditorSubsystem)
+		TArray<UObject*> EditedAssets = AssetEditorSubsystem->GetAllEditedAssets();
+		for (UObject* Asset : EditedAssets)
 		{
-			TArray<UObject*> EditedAssets = AssetEditorSubsystem->GetAllEditedAssets();
-			for (UObject* Asset : EditedAssets)
+			UBlueprint* Blueprint = Cast<UBlueprint>(Asset);
+			if (Blueprint)
 			{
-				UBlueprint* Blueprint = Cast<UBlueprint>(Asset);
-				if (Blueprint)
-				{
-					TSharedPtr<FJsonObject> BpInfo = MakeShared<FJsonObject>();
-					BpInfo->SetStringField(TEXT("name"), Blueprint->GetName());
-					BpInfo->SetStringField(TEXT("path"), Blueprint->GetPathName());
-					BlueprintsList.Add(MakeShared<FJsonValueObject>(BpInfo));
-				}
+				TSharedPtr<FJsonObject> BpInfo = MakeShared<FJsonObject>();
+				BpInfo->SetStringField(TEXT("name"), Blueprint->GetName());
+				BpInfo->SetStringField(TEXT("path"), Blueprint->GetPathName());
+				BlueprintsList.Add(MakeShared<FJsonValueObject>(BpInfo));
 			}
 		}
-
-		Promise->SetValue(BlueprintsList);
-	});
-
-	// Wait for game thread result (with timeout)
-	Future.WaitFor(FTimespan::FromSeconds(5.0));
-	if (Future.IsReady())
-	{
-		TArray<TSharedPtr<FJsonValue>> Blueprints = Future.Get();
-		TSharedPtr<FJsonObject> Response = MakeShared<FJsonObject>();
-		Response->SetArrayField(TEXT("blueprints"), Blueprints);
-
-		// Return as plain array for our backend's expected format
-		FString OutputString;
-		TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputString);
-		FJsonSerializer::Serialize(Blueprints, Writer);
-
-		auto HttpResponse = FHttpServerResponse::Create(OutputString, TEXT("application/json"));
-		OnComplete(MoveTemp(HttpResponse));
-	}
-	else
-	{
-		OnComplete(MakeErrorResponse(500, TEXT("Timed out accessing editor state")));
 	}
 
+	// Return as plain array for our backend's expected format
+	FString OutputString;
+	TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&OutputString);
+	FJsonSerializer::Serialize(BlueprintsList, Writer);
+
+	auto HttpResponse = FHttpServerResponse::Create(OutputString, TEXT("application/json"));
+	OnComplete(MoveTemp(HttpResponse));
 	return true;
 }
 
 bool FHttpServerHandler::HandleGetBlueprint(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
 {
-	FString BlueprintName;
 	if (!Request.QueryParams.Contains(TEXT("name")))
 	{
 		OnComplete(MakeErrorResponse(400, TEXT("Missing 'name' query parameter")));
 		return true;
 	}
-	BlueprintName = Request.QueryParams[TEXT("name")];
+	FString BlueprintName = Request.QueryParams[TEXT("name")];
 
-	TSharedPtr<TPromise<TSharedPtr<FJsonObject>>> Promise = MakeShared<TPromise<TSharedPtr<FJsonObject>>>();
-	TFuture<TSharedPtr<FJsonObject>> Future = Promise->GetFuture();
-
-	// Capture serializers map reference
-	TMap<FString, TSharedPtr<FBlueprintSerializer>>* SerializersPtr = &Serializers;
-
-	AsyncTask(ENamedThreads::GameThread, [Promise, BlueprintName, SerializersPtr]()
+	UBlueprint* Blueprint = FindBlueprintByName(BlueprintName);
+	if (!Blueprint)
 	{
-		UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
-		UBlueprint* Blueprint = nullptr;
-
-		if (AssetEditorSubsystem)
-		{
-			TArray<UObject*> EditedAssets = AssetEditorSubsystem->GetAllEditedAssets();
-			for (UObject* Asset : EditedAssets)
-			{
-				UBlueprint* Bp = Cast<UBlueprint>(Asset);
-				if (Bp && Bp->GetName() == BlueprintName)
-				{
-					Blueprint = Bp;
-					break;
-				}
-			}
-		}
-
-		if (!Blueprint)
-		{
-			Promise->SetValue(nullptr);
-			return;
-		}
-
-		// Get or create serializer for this blueprint
-		TSharedPtr<FBlueprintSerializer>& Serializer = SerializersPtr->FindOrAdd(BlueprintName);
-		if (!Serializer.IsValid())
-		{
-			Serializer = MakeShared<FBlueprintSerializer>();
-		}
-
-		TSharedPtr<FJsonObject> Result = Serializer->SerializeBlueprint(Blueprint);
-		Promise->SetValue(Result);
-	});
-
-	Future.WaitFor(FTimespan::FromSeconds(10.0));
-	if (Future.IsReady())
-	{
-		TSharedPtr<FJsonObject> Result = Future.Get();
-		if (Result.IsValid())
-		{
-			OnComplete(MakeJsonResponse(Result));
-		}
-		else
-		{
-			OnComplete(MakeErrorResponse(404, FString::Printf(TEXT("Blueprint '%s' not found in editor"), *BlueprintName)));
-		}
-	}
-	else
-	{
-		OnComplete(MakeErrorResponse(500, TEXT("Timed out serializing blueprint")));
+		OnComplete(MakeErrorResponse(404, FString::Printf(TEXT("Blueprint '%s' not found in editor"), *BlueprintName)));
+		return true;
 	}
 
+	// Get or create serializer for this blueprint
+	TSharedPtr<FBlueprintSerializer>& Serializer = Serializers.FindOrAdd(BlueprintName);
+	if (!Serializer.IsValid())
+	{
+		Serializer = MakeShared<FBlueprintSerializer>();
+	}
+
+	TSharedPtr<FJsonObject> Result = Serializer->SerializeBlueprint(Blueprint);
+	OnComplete(MakeJsonResponse(Result));
 	return true;
 }
 
 bool FHttpServerHandler::HandleApplyBlueprint(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
 {
-	FString BlueprintName;
 	if (!Request.QueryParams.Contains(TEXT("name")))
 	{
 		OnComplete(MakeErrorResponse(400, TEXT("Missing 'name' query parameter")));
 		return true;
 	}
-	BlueprintName = Request.QueryParams[TEXT("name")];
+	FString BlueprintName = Request.QueryParams[TEXT("name")];
 
 	// Parse request body
 	FString BodyString = FString(UTF8_TO_TCHAR(
@@ -169,58 +100,26 @@ bool FHttpServerHandler::HandleApplyBlueprint(const FHttpServerRequest& Request,
 		return true;
 	}
 
-	TSharedPtr<TPromise<bool>> Promise = MakeShared<TPromise<bool>>();
-	TFuture<bool> Future = Promise->GetFuture();
-
-	FBlueprintDeserializer* DeserializerPtr = &Deserializer;
-
-	AsyncTask(ENamedThreads::GameThread, [Promise, BlueprintName, BodyJson, DeserializerPtr]()
+	UBlueprint* Blueprint = FindBlueprintByName(BlueprintName);
+	if (!Blueprint)
 	{
-		UAssetEditorSubsystem* AssetEditorSubsystem = GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
-		UBlueprint* Blueprint = nullptr;
-
-		if (AssetEditorSubsystem)
-		{
-			TArray<UObject*> EditedAssets = AssetEditorSubsystem->GetAllEditedAssets();
-			for (UObject* Asset : EditedAssets)
-			{
-				UBlueprint* Bp = Cast<UBlueprint>(Asset);
-				if (Bp && Bp->GetName() == BlueprintName)
-				{
-					Blueprint = Bp;
-					break;
-				}
-			}
-		}
-
-		if (!Blueprint)
-		{
-			Promise->SetValue(false);
-			return;
-		}
-
-		bool bSuccess = DeserializerPtr->ApplyFullSync(Blueprint, BodyJson);
-		Promise->SetValue(bSuccess);
-	});
-
-	Future.WaitFor(FTimespan::FromSeconds(30.0));
-	if (Future.IsReady())
-	{
-		bool bSuccess = Future.Get();
 		TSharedPtr<FJsonObject> Response = MakeShared<FJsonObject>();
-		Response->SetBoolField(TEXT("success"), bSuccess);
-		if (!bSuccess)
-		{
-			Response->SetStringField(TEXT("error"),
-				FString::Printf(TEXT("Blueprint '%s' not found or failed to apply"), *BlueprintName));
-		}
+		Response->SetBoolField(TEXT("success"), false);
+		Response->SetStringField(TEXT("error"),
+			FString::Printf(TEXT("Blueprint '%s' not found in editor"), *BlueprintName));
 		OnComplete(MakeJsonResponse(Response));
-	}
-	else
-	{
-		OnComplete(MakeErrorResponse(500, TEXT("Timed out applying blueprint changes")));
+		return true;
 	}
 
+	bool bSuccess = Deserializer.ApplyFullSync(Blueprint, BodyJson);
+
+	TSharedPtr<FJsonObject> Response = MakeShared<FJsonObject>();
+	Response->SetBoolField(TEXT("success"), bSuccess);
+	if (!bSuccess)
+	{
+		Response->SetStringField(TEXT("error"), TEXT("Failed to apply blueprint changes"));
+	}
+	OnComplete(MakeJsonResponse(Response));
 	return true;
 }
 
