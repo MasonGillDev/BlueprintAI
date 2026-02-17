@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using BlueprintAI.Application.Interfaces;
@@ -82,9 +83,11 @@ public class UEBridgeService : IUEBridgeService
     {
         var client = _httpClientFactory.CreateClient("UEBridge");
         client.Timeout = TimeSpan.FromSeconds(30);
-        var response = await client.PostAsJsonAsync(
+        var json = JsonSerializer.Serialize(delta, JsonOpts);
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await client.PostAsync(
             $"{_settings.BaseUrl}/api/blueprint/apply?name={Uri.EscapeDataString(blueprintName)}",
-            delta, JsonOpts, ct);
+            content, ct);
         return response.IsSuccessStatusCode;
     }
 
@@ -119,7 +122,9 @@ public class UEBridgeService : IUEBridgeService
             } : null
         };
 
-        var response = await client.PostAsJsonAsync($"{_settings.BaseUrl}/api/blueprint/create", body, JsonOpts, ct);
+        var json = JsonSerializer.Serialize(body, JsonOpts);
+        var content = new StringContent(json, Encoding.UTF8, "application/json");
+        var response = await client.PostAsync($"{_settings.BaseUrl}/api/blueprint/create", content, ct);
         var result = await response.Content.ReadFromJsonAsync<UECreateBlueprintResult>(JsonOpts, ct);
         return result ?? new UECreateBlueprintResult { Success = false, Error = "Failed to parse response" };
     }
