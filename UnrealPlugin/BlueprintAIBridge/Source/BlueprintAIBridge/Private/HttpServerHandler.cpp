@@ -7,6 +7,16 @@
 #include "Editor.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
+#include "Kismet2/KismetEditorUtilities.h"
+#include "AssetToolsModule.h"
+#include "Factories/BlueprintFactory.h"
+#include "UObject/SavePackage.h"
+#include "GameFramework/Actor.h"
+#include "GameFramework/Pawn.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/PlayerController.h"
+#include "GameFramework/GameModeBase.h"
+#include "Components/ActorComponent.h"
 
 bool FHttpServerHandler::HandleStatus(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
 {
@@ -119,6 +129,110 @@ bool FHttpServerHandler::HandleApplyBlueprint(const FHttpServerRequest& Request,
 	{
 		Response->SetStringField(TEXT("error"), TEXT("Failed to apply blueprint changes"));
 	}
+	OnComplete(MakeJsonResponse(Response));
+	return true;
+}
+
+bool FHttpServerHandler::HandleCreateBlueprint(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
+{
+	// Parse request body: { "name": "BP_MyBlueprint", "path": "/Game/Blueprints", "parentClass": "Actor", "state": { ... } }
+	FString BodyString = FString(UTF8_TO_TCHAR(
+		reinterpret_cast<const char*>(Request.Body.GetData())));
+
+	TSharedPtr<FJsonObject> BodyJson;
+	TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(BodyString);
+	if (!FJsonSerializer::Deserialize(Reader, BodyJson) || !BodyJson.IsValid())
+	{
+		OnComplete(MakeErrorResponse(400, TEXT("Invalid JSON body")));
+		return true;
+	}
+
+	FString Name = BodyJson->GetStringField(TEXT("name"));
+	FString Path = BodyJson->HasField(TEXT("path")) ? BodyJson->GetStringField(TEXT("path")) : TEXT("/Game/Blueprints");
+	FString ParentClassName = BodyJson->HasField(TEXT("parentClass")) ? BodyJson->GetStringField(TEXT("parentClass")) : TEXT("Actor");
+
+	if (Name.IsEmpty())
+	{
+		OnComplete(MakeErrorResponse(400, TEXT("Missing 'name' field")));
+		return true;
+	}
+
+	// Resolve parent class
+	UClass* ParentClass = AActor::StaticClass(); // default
+	if (ParentClassName == TEXT("Pawn"))
+	{
+		ParentClass = APawn::StaticClass();
+	}
+	else if (ParentClassName == TEXT("Character"))
+	{
+		ParentClass = ACharacter::StaticClass();
+	}
+	else if (ParentClassName == TEXT("PlayerController"))
+	{
+		ParentClass = APlayerController::StaticClass();
+	}
+	else if (ParentClassName == TEXT("GameModeBase"))
+	{
+		ParentClass = AGameModeBase::StaticClass();
+	}
+	else if (ParentClassName == TEXT("ActorComponent"))
+	{
+		ParentClass = UActorComponent::StaticClass();
+	}
+
+	// Create the package and blueprint
+	FString PackagePath = Path / Name;
+	FString AssetName = Name;
+
+	UPackage* Package = CreatePackage(*PackagePath);
+	if (!Package)
+	{
+		OnComplete(MakeErrorResponse(500, FString::Printf(TEXT("Failed to create package at '%s'"), *PackagePath)));
+		return true;
+	}
+
+	UBlueprint* NewBlueprint = FKismetEditorUtilities::CreateBlueprint(
+		ParentClass,
+		Package,
+		FName(*AssetName),
+		BPTYPE_Normal,
+		UBlueprint::StaticClass(),
+		UBlueprintGeneratedClass::StaticClass()
+	);
+
+	if (!NewBlueprint)
+	{
+		OnComplete(MakeErrorResponse(500, TEXT("Failed to create blueprint")));
+		return true;
+	}
+
+	// Apply initial state if provided
+	const TSharedPtr<FJsonObject>* StateJson;
+	if (BodyJson->TryGetObjectField(TEXT("state"), StateJson))
+	{
+		Deserializer.ApplyFullSync(NewBlueprint, *StateJson);
+	}
+
+	// Mark dirty and save
+	NewBlueprint->MarkPackageDirty();
+	FAssetRegistryModule::AssetCreated(NewBlueprint);
+
+	// Save the asset
+	FSavePackageArgs SaveArgs;
+	SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+	FString PackageFileName = FPackageName::LongPackageNameToFilename(PackagePath, FPackageName::GetAssetPackageExtension());
+	UPackage::SavePackage(Package, NewBlueprint, *PackageFileName, SaveArgs);
+
+	// Open in editor
+	GEditor->GetEditorSubsystem<UAssetEditorSubsystem>()->OpenEditorForAsset(NewBlueprint);
+
+	TSharedPtr<FJsonObject> Response = MakeShared<FJsonObject>();
+	Response->SetBoolField(TEXT("success"), true);
+	Response->SetStringField(TEXT("name"), NewBlueprint->GetName());
+	Response->SetStringField(TEXT("path"), NewBlueprint->GetPathName());
+
+	UE_LOG(LogTemp, Log, TEXT("BlueprintAIBridge: Created new blueprint '%s' at '%s'"), *Name, *PackagePath);
+
 	OnComplete(MakeJsonResponse(Response));
 	return true;
 }

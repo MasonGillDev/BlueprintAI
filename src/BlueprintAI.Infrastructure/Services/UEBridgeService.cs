@@ -98,4 +98,29 @@ public class UEBridgeService : IUEBridgeService
         };
         return await PushDeltaAsync(blueprintName, delta, ct);
     }
+
+    public async Task<UECreateBlueprintResult> CreateBlueprintAsync(string name, string path, string parentClass, Blueprint? initialState, CancellationToken ct = default)
+    {
+        var client = _httpClientFactory.CreateClient("UEBridge");
+        client.Timeout = TimeSpan.FromSeconds(30);
+
+        var body = new
+        {
+            name,
+            path,
+            parentClass,
+            state = initialState != null ? new
+            {
+                name = initialState.Name,
+                nodes = initialState.Nodes,
+                connections = initialState.Connections,
+                comments = initialState.Comments,
+                variables = initialState.Variables
+            } : null
+        };
+
+        var response = await client.PostAsJsonAsync($"{_settings.BaseUrl}/api/blueprint/create", body, JsonOpts, ct);
+        var result = await response.Content.ReadFromJsonAsync<UECreateBlueprintResult>(JsonOpts, ct);
+        return result ?? new UECreateBlueprintResult { Success = false, Error = "Failed to parse response" };
+    }
 }

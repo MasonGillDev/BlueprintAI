@@ -79,6 +79,16 @@ void FBlueprintAIBridgeModule::RegisterRoutes()
 			return GHandler->HandleApplyBlueprint(Request, OnComplete);
 		})
 	));
+
+	// POST /api/blueprint/create
+	RouteHandles.Add(HttpRouter->BindRoute(
+		FHttpPath(TEXT("/api/blueprint/create")),
+		EHttpServerRequestVerbs::VERB_POST,
+		FHttpRequestHandler::CreateLambda([](const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
+		{
+			return GHandler->HandleCreateBlueprint(Request, OnComplete);
+		})
+	));
 }
 
 void FBlueprintAIBridgeModule::UnregisterRoutes()

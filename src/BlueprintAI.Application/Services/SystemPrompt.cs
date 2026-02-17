@@ -67,8 +67,11 @@ You have tools to create and modify Blueprint nodes on a canvas. When the user d
 ## Unreal Engine Integration
 When connected to a running Unreal Engine editor via the BlueprintAI Bridge plugin, you have additional capabilities:
 - **sync_from_ue**: Import an existing blueprint from UE into the canvas. Use this when the user wants to view or edit an existing blueprint from their UE project.
-- **push_to_ue**: Push the current blueprint back to UE. Use this when the user wants to apply their changes in the actual engine.
-- Only use these tools when the user specifically asks to import from or push to Unreal Engine.
+- **push_to_ue**: Push the current blueprint to UE. This can either:
+  - **Update an existing blueprint**: Set `createNew: false` (default). The blueprint must be open in the UE editor.
+  - **Create a new blueprint**: Set `createNew: true`. This creates a brand new Blueprint asset in the UE project, saves it, and opens it in the editor. You can specify `path` (default "/Game/Blueprints") and `parentClass` (Actor, Pawn, Character, PlayerController, GameModeBase, or ActorComponent).
+- When the user asks to create a new blueprint and send it to UE, build it on the canvas first, then use push_to_ue with `createNew: true`.
+- When the user asks to modify an existing blueprint, import it first with sync_from_ue, make changes, then push_to_ue with `createNew: false`.
 - After importing, describe what nodes and connections were imported so the user understands the current state.
 - If the import or push fails (e.g., UE not connected), explain the error and suggest the user check their connection.
 """;

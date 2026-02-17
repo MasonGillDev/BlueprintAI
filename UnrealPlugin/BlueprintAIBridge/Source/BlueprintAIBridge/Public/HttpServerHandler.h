@@ -9,10 +9,11 @@
 /**
  * Handles all HTTP requests for the BlueprintAI bridge plugin.
  * Routes:
- *   GET  /api/status              - Health check + engine version
- *   GET  /api/blueprints          - List open blueprints in editor
- *   GET  /api/blueprint?name=X    - Export blueprint graph as JSON
+ *   GET  /api/status                - Health check + engine version
+ *   GET  /api/blueprints            - List open blueprints in editor
+ *   GET  /api/blueprint?name=X      - Export blueprint graph as JSON
  *   POST /api/blueprint/apply?name=X - Apply delta/full-sync to blueprint
+ *   POST /api/blueprint/create       - Create a new blueprint asset
  */
 class BLUEPRINTAIBRIDGE_API FHttpServerHandler
 {
@@ -21,6 +22,7 @@ public:
 	bool HandleListBlueprints(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete);
 	bool HandleGetBlueprint(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete);
 	bool HandleApplyBlueprint(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete);
+	bool HandleCreateBlueprint(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete);
 
 private:
 	UBlueprint* FindBlueprintByName(const FString& Name) const;

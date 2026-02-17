@@ -20,6 +20,14 @@ public class UEBlueprintInfo
     public string Path { get; set; } = string.Empty;
 }
 
+public class UECreateBlueprintResult
+{
+    public bool Success { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Path { get; set; } = string.Empty;
+    public string? Error { get; set; }
+}
+
 public interface IUEBridgeService
 {
     Task<UEConnectionStatus> CheckConnectionAsync(CancellationToken ct = default);
@@ -27,6 +35,7 @@ public interface IUEBridgeService
     Task<Blueprint> ImportBlueprintAsync(string name, CancellationToken ct = default);
     Task<bool> PushDeltaAsync(string blueprintName, BlueprintDelta delta, CancellationToken ct = default);
     Task<bool> PushFullBlueprintAsync(string blueprintName, Blueprint blueprint, CancellationToken ct = default);
+    Task<UECreateBlueprintResult> CreateBlueprintAsync(string name, string path, string parentClass, Blueprint? initialState, CancellationToken ct = default);
     void Configure(UEConnectionSettings settings);
     UEConnectionSettings GetSettings();
 }
