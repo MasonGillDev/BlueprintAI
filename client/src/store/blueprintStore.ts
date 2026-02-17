@@ -9,6 +9,7 @@ interface BlueprintState {
   version: number;
 
   applyDelta: (delta: BlueprintDelta) => void;
+  updateNodePosition: (id: string, x: number, y: number) => void;
   reset: () => void;
 }
 
@@ -123,6 +124,13 @@ export const useBlueprintStore = create<BlueprintState>((set) => ({
       }
     });
   },
+
+  updateNodePosition: (id: string, x: number, y: number) =>
+    set((state) => ({
+      nodes: state.nodes.map((n) =>
+        n.id === id ? { ...n, positionX: x, positionY: y } : n
+      ),
+    })),
 
   reset: () =>
     set({

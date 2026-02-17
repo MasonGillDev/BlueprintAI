@@ -1,12 +1,14 @@
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useState, useEffect } from 'react';
 import {
   ReactFlow,
   Background,
   Controls,
   MiniMap,
   BackgroundVariant,
+  applyNodeChanges,
   type Node,
   type Edge,
+  type NodeChange,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { useBlueprintStore } from '../../store/blueprintStore';
@@ -67,15 +69,36 @@ export default function BlueprintCanvas() {
   const bpNodes = useBlueprintStore((s) => s.nodes);
   const connections = useBlueprintStore((s) => s.connections);
   const comments = useBlueprintStore((s) => s.comments);
+  const updateNodePosition = useBlueprintStore((s) => s.updateNodePosition);
 
-  const flowNodes = useMemo(() => convertToFlowNodes(bpNodes, comments), [bpNodes, comments]);
+  const [flowNodes, setFlowNodes] = useState<Node[]>([]);
   const flowEdges = useMemo(() => convertToFlowEdges(connections), [connections]);
+
+  // Sync store → local flow nodes when store changes (new nodes, deltas, etc.)
+  useEffect(() => {
+    setFlowNodes(convertToFlowNodes(bpNodes, comments));
+  }, [bpNodes, comments]);
+
+  const onNodesChange = useCallback(
+    (changes: NodeChange[]) => {
+      setFlowNodes((nds) => applyNodeChanges(changes, nds));
+
+      // Persist final positions back to store after drag ends
+      for (const change of changes) {
+        if (change.type === 'position' && change.dragging === false && change.position) {
+          updateNodePosition(change.id, change.position.x, change.position.y);
+        }
+      }
+    },
+    [updateNodePosition]
+  );
 
   return (
     <div className="bp-canvas">
       <ReactFlow
         nodes={flowNodes}
         edges={flowEdges}
+        onNodesChange={onNodesChange}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         fitView
