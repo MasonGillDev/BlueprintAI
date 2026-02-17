@@ -13,18 +13,25 @@ class UEdGraph;
 class BLUEPRINTAIBRIDGE_API FBlueprintDeserializer
 {
 public:
-	/**
-	 * Apply a full blueprint state (from BlueprintAI JSON) to an existing UE Blueprint.
-	 * Clears the event graph and recreates all nodes and connections.
-	 * Must be called on the game thread.
-	 *
-	 * @return true if successful
-	 */
 	bool ApplyFullSync(UBlueprint* Blueprint, const TSharedPtr<FJsonObject>& JsonState);
 
 private:
-	UEdGraphNode* CreateNodeFromJson(UEdGraph* Graph, const TSharedPtr<FJsonObject>& NodeJson);
+	UEdGraphNode* CreateNodeFromJson(UBlueprint* Blueprint, UEdGraph* Graph, const TSharedPtr<FJsonObject>& NodeJson);
+	UEdGraphNode* CreateEventNode(UBlueprint* Blueprint, UEdGraph* Graph, const FString& Title, int32 PosX, int32 PosY);
+	UEdGraphNode* CreateFunctionNode(UEdGraph* Graph, const FString& Title, int32 PosX, int32 PosY);
+	UEdGraphNode* CreateFlowControlNode(UEdGraph* Graph, const FString& Title, int32 PosX, int32 PosY);
+	UEdGraphNode* CreatePureNode(UEdGraph* Graph, const FString& Title, int32 PosX, int32 PosY);
+
 	bool WireConnections(UEdGraph* Graph, const TArray<TSharedPtr<FJsonValue>>& Connections,
-		const TMap<FString, UEdGraphNode*>& NodeMap);
+		const TMap<FString, UEdGraphNode*>& NodeMap,
+		const TMap<FString, TMap<FString, FString>>& PinIdToNameMap);
+
 	UEdGraphPin* FindPinByName(UEdGraphNode* Node, const FString& PinName, EEdGraphPinDirection Direction);
+	UFunction* FindFunctionByDisplayName(const FString& DisplayName);
+
+	/** Maps JSON pin ID → pin display name, per node ID */
+	TMap<FString, TMap<FString, FString>> PinNameMap;
+
+	/** Cache for FindFunctionByDisplayName to avoid repeated TObjectIterator scans */
+	TMap<FString, UFunction*> FunctionCache;
 };
